@@ -1,14 +1,18 @@
 import os
-from flask import Flask, request, Response, render_template_string
+from flask import Flask, request, Response, render_template_string, redirect, url_for, jsonify
 from openai import OpenAI
 from dotenv import load_dotenv
+from flask_dance.contrib.google import make_google_blueprint, google
 
 # ---------- Load Environment Variables ----------
-load_dotenv()  # 👈 reads from .env file in your project root
+load_dotenv()
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+
 if not OPENROUTER_API_KEY:
-    raise ValueError("⚠️ Missing OPENROUTER_API_KEY. Please set it in your .env file.")
+    raise ValueError("⚠️ Missing OPENROUTER_API_KEY. Please set it in Railway/Render variables.")
 
 # ---------- OpenAI Client ----------
 client = OpenAI(
@@ -18,6 +22,15 @@ client = OpenAI(
 
 # ---------- Flask App ----------
 app = Flask(__name__)
+app.secret_key = "supersecret"  # ⚠️ replace with ENV variable in production!
+
+# ---------- Google OAuth ----------
+google_bp = make_google_blueprint(
+    client_id=GOOGLE_CLIENT_ID,
+    client_secret=GOOGLE_CLIENT_SECRET,
+    redirect_to="index"
+)
+app.register_blueprint(google_bp, url_prefix="/login")
 
 # ---------- Frontend UI ----------
 PAGE = """<!doctype html>
@@ -25,120 +38,58 @@ PAGE = """<!doctype html>
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>AlphaBros — GPT-5 (Streaming)</title>
+  <title>AlphaBros — GPT-5 AI</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <style>
-       /* ---------- Responsive Fix ---------- */
-@media (max-width: 900px) {
-  .sidebar {
-    width: 200px;
-  }
-  header {
-    font-size: 0.9rem;
-  }
-  textarea {
-    font-size: 0.9rem;
-    height: 45px;
-  }
-}
-
-@media (max-width: 600px) {
-  body {
-    flex-direction: column; /* sidebar moves on top */
-  }
-  .sidebar {
-    width: 100%;
-    height: 120px;
-    flex-direction: row;
-    overflow-x: auto;
-    overflow-y: hidden;
-  }
-  .sidebar h3 {
-    display: none; /* hide Chats title on mobile */
-  }
-  .tab {
-    min-width: 100px;
-    font-size: 0.8rem;
-  }
-  .shell {
-    flex: 1;
-    height: calc(100vh - 120px); /* fill remaining space */
-  }
-  header {
-    font-size: 0.85rem;
-    padding: 0 10px;
-  }
-  textarea {
-    font-size: 0.85rem;
-    height: 40px;
-  }
-}
-
     body {
       margin:0; padding:0;
       font-family: 'Inter', 'Segoe UI', sans-serif;
       display:flex; height:100vh; overflow:hidden;
       background:#111; color:#eee;
     }
-    /* Sidebar */
-    .sidebar {
-      width:260px; background:#1e1e2f; border-right:1px solid #2a2a3a;
-      display:flex; flex-direction:column; padding:15px; overflow-y:auto;
-    }
+    .sidebar { width:260px; background:#1e1e2f; border-right:1px solid #2a2a3a;
+      display:flex; flex-direction:column; padding:15px; overflow-y:auto; }
     .sidebar h3 { margin:0 0 12px; color:#8b5cf6; font-size:1rem; }
-    .tab {
-      padding:10px; margin:4px 0; background:#26263a;
-      border-radius:8px; cursor:pointer;
-      display:flex; justify-content:space-between; align-items:center;
-      transition:.2s;
-    }
+    .tab { padding:10px; margin:4px 0; background:#26263a; border-radius:8px;
+      cursor:pointer; display:flex; justify-content:space-between; align-items:center; transition:.2s; }
     .tab:hover { background:#33334d; }
     .tab.active { background:#8b5cf6; color:#fff; }
-    .tab span { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .tab button { background:none; border:none; color:#aaa; cursor:pointer; }
-    .tab button:hover { color:#fff; }
-    .new-chat {
-      margin-top:10px; padding:10px; border:none; border-radius:8px;
-      background:#8b5cf6; color:#fff; cursor:pointer; font-weight:bold;
-    }
-    /* Chat area */
+    .new-chat { margin-top:10px; padding:10px; border:none; border-radius:8px;
+      background:#8b5cf6; color:#fff; cursor:pointer; font-weight:bold; }
     .shell { flex:1; display:flex; flex-direction:column; }
-    header {
-      height:50px; background:#1e1e2f; border-bottom:1px solid #2a2a3a;
+    header { height:50px; background:#1e1e2f; border-bottom:1px solid #2a2a3a;
       display:flex; align-items:center; justify-content:space-between;
-      padding:0 15px; font-weight:bold; color:#8b5cf6;
-    }
-    .chat {
-      flex:1; overflow-y:auto; padding:20px;
-      display:flex; flex-direction:column;
-      background:#111;
-    }
-    .bubble {
-      max-width:70%; padding:12px 16px; margin:6px 0;
-      border-radius:12px; line-height:1.4;
-      animation:fadeIn .3s ease;
-      white-space:pre-wrap;
-    }
+      padding:0 15px; font-weight:bold; color:#8b5cf6; }
+    .chat { flex:1; overflow-y:auto; padding:20px; display:flex; flex-direction:column; background:#111; }
+    .bubble { max-width:70%; padding:12px 16px; margin:6px 0; border-radius:12px; line-height:1.4;
+      animation:fadeIn .3s ease; white-space:pre-wrap; }
     .user { align-self:flex-end; background:#2d3748; color:#fff; }
     .assistant { align-self:flex-start; background:#8b5cf6; color:#fff; }
+    .image { align-self:flex-start; margin:6px 0; }
+    .image img { max-width:250px; border-radius:12px; }
     @keyframes fadeIn { from{opacity:0;transform:translateY(5px);} to{opacity:1;transform:translateY(0);} }
-    /* Footer input */
-    form {
-      display:flex; align-items:center;
-      padding:10px; background:#1e1e2f; border-top:1px solid #2a2a3a;
-    }
-    textarea {
-      flex:1; resize:none; border:none; outline:none;
-      background:#2a2a3a; color:#fff; border-radius:8px;
-      padding:10px; font-size:1rem; height:50px;
-    }
-    .btn {
-      margin-left:8px; padding:12px; border:none; border-radius:8px;
-      cursor:pointer; background:#2a2a3a; color:#fff;
-      display:flex; align-items:center; justify-content:center;
-    }
+    form { display:flex; align-items:center; padding:10px; background:#1e1e2f; border-top:1px solid #2a2a3a; }
+    textarea { flex:1; resize:none; border:none; outline:none; background:#2a2a3a; color:#fff;
+      border-radius:8px; padding:10px; font-size:1rem; height:50px; }
+    .btn { margin-left:8px; padding:12px; border:none; border-radius:8px;
+      cursor:pointer; background:#2a2a3a; color:#fff; display:flex; align-items:center; justify-content:center; }
     .btn:hover { background:#3a3a55; }
     #upload { display:none; }
+    /* Responsive Fix */
+    @media (max-width: 900px) {
+      .sidebar { width:200px; }
+      header { font-size:0.9rem; }
+      textarea { font-size:0.9rem; height:45px; }
+    }
+    @media (max-width: 600px) {
+      body { flex-direction:column; }
+      .sidebar { width:100%; height:120px; flex-direction:row; overflow-x:auto; overflow-y:hidden; }
+      .sidebar h3 { display:none; }
+      .tab { min-width:100px; font-size:0.8rem; }
+      .shell { flex:1; height:calc(100vh - 120px); }
+      header { font-size:0.85rem; padding:0 10px; }
+      textarea { font-size:0.85rem; height:40px; }
+    }
   </style>
 </head>
 <body>
@@ -147,20 +98,18 @@ PAGE = """<!doctype html>
     <div id="tab-list"></div>
     <button id="new-chat" class="new-chat"><i class="fa-solid fa-plus"></i> New Chat</button>
   </div>
-
   <div class="shell">
     <header>
       <span><i class="fa-solid fa-robot"></i> AlphaBros</span>
       <span id="status">Ready</span>
     </header>
-
     <main id="messages" class="chat"></main>
-
     <form id="chat-form">
       <textarea id="input" placeholder="Type your message..."></textarea>
       <input type="file" id="upload" />
       <label for="upload" class="btn"><i class="fa-solid fa-paperclip"></i></label>
       <button type="button" id="record" class="btn"><i class="fa-solid fa-microphone"></i></button>
+      <button type="button" id="image-btn" class="btn"><i class="fa-solid fa-image"></i></button>
       <button type="submit" class="btn"><i class="fa-solid fa-paper-plane"></i></button>
     </form>
   </div>
@@ -176,74 +125,59 @@ let chats = [];
 let activeChat = null;
 
 function saveChats(){ localStorage.setItem("alphabros_chats", JSON.stringify(chats)); }
-function loadChats(){
-  const saved = localStorage.getItem("alphabros_chats");
-  chats = saved ? JSON.parse(saved) : [];
-  newChat();
-}
-function newChat(name="New Chat"){
-  const chat = { id:Date.now(), name, history:[
-    { role:"system", content:"You are AlphaBros, a helpful assistant. If asked your name, say 'I am AlphaBros 🤖'. If asked your creator, say 'My creator is Piyush 👨‍💻'." }
-  ]};
-  chats.push(chat); setActiveChat(chat.id);
-  renderTabs(); saveChats();
-}
-function setActiveChat(id){
-  activeChat = chats.find(c=>c.id===id);
+function loadChats(){ const saved = localStorage.getItem("alphabros_chats");
+  chats = saved ? JSON.parse(saved) : []; newChat(); }
+function newChat(name="New Chat"){ const chat = { id:Date.now(), name, history:[
+  { role:"system", content:"You are AlphaBros, a helpful assistant. If asked your name, say 'I am AlphaBros 🤖'. If asked your creator, say 'My creator is Piyush 👨‍💻'." }
+]}; chats.push(chat); setActiveChat(chat.id); renderTabs(); saveChats(); }
+function setActiveChat(id){ activeChat = chats.find(c=>c.id===id);
   msgs.innerHTML=""; activeChat.history.forEach(m=>{
-    if(m.role!=="system") addBubble(m.role,m.content);
-  });
-  renderTabs(); saveChats();
-}
-function renderTabs(){
-  tabList.innerHTML="";
-  chats.forEach(chat=>{
-    const div=document.createElement("div");
-    div.className="tab"+(chat===activeChat?" active":"");
-    const span=document.createElement("span");
-    span.textContent=chat.name;
-    span.onclick=()=>setActiveChat(chat.id);
-    const rename=document.createElement("button");
-    rename.innerHTML="<i class='fa-solid fa-pen'></i>";
-    rename.onclick=e=>{
-      e.stopPropagation();
-      const newName=prompt("Rename chat:",chat.name);
-      if(newName){ chat.name=newName; renderTabs(); saveChats(); }
-    };
-    const del=document.createElement("button");
-    del.innerHTML="<i class='fa-solid fa-trash'></i>";
-    del.onclick=e=>{
-      e.stopPropagation();
-      chats=chats.filter(c=>c.id!==chat.id);
-      if(chat===activeChat){ chats.length?setActiveChat(chats[0].id):newChat(); }
-      renderTabs(); saveChats();
-    };
-    div.appendChild(span); div.appendChild(rename); div.appendChild(del);
-    tabList.appendChild(div);
-  });
-}
-function addBubble(role,text){
+    if(m.role==="assistant"||m.role==="user") addBubble(m.role,m.content);
+    if(m.role==="image") addImage(m.content);
+  }); renderTabs(); saveChats(); }
+function renderTabs(){ tabList.innerHTML=""; chats.forEach(chat=>{
   const div=document.createElement("div");
-  div.className="bubble "+role; div.textContent=text;
-  msgs.appendChild(div); msgs.scrollTop=msgs.scrollHeight; return div;
-}
+  div.className="tab"+(chat===activeChat?" active":"");
+  const span=document.createElement("span");
+  span.textContent=chat.name; span.onclick=()=>setActiveChat(chat.id);
+  const rename=document.createElement("button"); rename.innerHTML="<i class='fa-solid fa-pen'></i>";
+  rename.onclick=e=>{ e.stopPropagation(); const newName=prompt("Rename chat:",chat.name);
+    if(newName){ chat.name=newName; renderTabs(); saveChats(); }};
+  const del=document.createElement("button"); del.innerHTML="<i class='fa-solid fa-trash'></i>";
+  del.onclick=e=>{ e.stopPropagation(); chats=chats.filter(c=>c.id!==chat.id);
+    if(chat===activeChat){ chats.length?setActiveChat(chats[0].id):newChat(); }
+    renderTabs(); saveChats(); };
+  div.appendChild(span); div.appendChild(rename); div.appendChild(del);
+  tabList.appendChild(div); }); }
+function addBubble(role,text){ const div=document.createElement("div");
+  div.className="bubble "+role; div.textContent=text; msgs.appendChild(div);
+  msgs.scrollTop=msgs.scrollHeight; return div; }
+function addImage(url){ const div=document.createElement("div");
+  div.className="image"; div.innerHTML=`<img src="${url}" alt="AI Image"/>`;
+  msgs.appendChild(div); msgs.scrollTop=msgs.scrollHeight; }
+
 form.addEventListener("submit",async e=>{
   e.preventDefault();
   const text=input.value.trim(); if(!text||!activeChat) return;
-  addBubble("user",text);
-  activeChat.history.push({role:"user",content:text});
-  input.value=""; status.textContent="Thinking…";
-  const bubble=addBubble("assistant","");
-  const res=await fetch("/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:activeChat.history})});
+  addBubble("user",text); activeChat.history.push({role:"user",content:text});
+  input.value=""; status.textContent="Thinking…"; const bubble=addBubble("assistant","");
+  const res=await fetch("/chat",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({messages:activeChat.history})});
   const reader=res.body.getReader(); const decoder=new TextDecoder(); let full="";
   while(true){ const {done,value}=await reader.read(); if(done) break;
     const chunk=decoder.decode(value); bubble.textContent+=chunk; full+=chunk; msgs.scrollTop=msgs.scrollHeight; }
   activeChat.history.push({role:"assistant",content:full}); saveChats(); status.textContent="Ready";
 });
-input.addEventListener("keydown",e=>{
-  if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); form.dispatchEvent(new Event("submit")); }
-});
 document.getElementById("new-chat").addEventListener("click",()=>newChat());
+document.getElementById("image-btn").addEventListener("click",async ()=>{
+  const prompt=input.value.trim(); if(!prompt) return alert("Enter an image description!");
+  addBubble("user","🖼️ "+prompt); input.value=""; status.textContent="Generating image…";
+  const res=await fetch("/image",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({prompt})}); const data=await res.json();
+  if(data.url){ addImage(data.url); activeChat.history.push({role:"image",content:data.url}); saveChats(); }
+  else { addBubble("assistant","⚠️ "+data.error); }
+  status.textContent="Ready";
+});
 loadChats();
 </script>
 </body>
@@ -253,6 +187,8 @@ loadChats();
 # ---------- Routes ----------
 @app.route("/")
 def index():
+    if not google.authorized:
+        return redirect(url_for("google.login"))
     return render_template_string(PAGE)
 
 @app.route("/chat", methods=["POST"])
@@ -270,6 +206,16 @@ def chat():
         except Exception as e:
             yield f"⚠️ Error: {str(e)}"
     return Response(generate(), mimetype="text/plain")
+
+@app.route("/image", methods=["POST"])
+def image():
+    payload = request.get_json(silent=True) or {}
+    prompt = payload.get("prompt", "")
+    try:
+        result = client.images.generate(model="openai/dall-e-3", prompt=prompt, size="512x512")
+        return jsonify({"url": result.data[0].url})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 # ---------- Run ----------
 if __name__ == "__main__":
