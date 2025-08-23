@@ -28,7 +28,7 @@ PAGE = """<!doctype html>
   <title>AlphaBros — GPT-5 (Streaming)</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <style>
-  /* ---------- Responsive Fix ---------- */
+       /* ---------- Responsive Fix ---------- */
 @media (max-width: 900px) {
   .sidebar {
     width: 200px;
@@ -44,25 +44,25 @@ PAGE = """<!doctype html>
 
 @media (max-width: 600px) {
   body {
-    flex-direction: column;
+    flex-direction: column; /* sidebar moves on top */
   }
   .sidebar {
     width: 100%;
-    height: 150px;
+    height: 120px;
     flex-direction: row;
     overflow-x: auto;
     overflow-y: hidden;
   }
   .sidebar h3 {
-    display: none; /* hide Chats title */
+    display: none; /* hide Chats title on mobile */
   }
   .tab {
-    min-width: 120px;
+    min-width: 100px;
     font-size: 0.8rem;
   }
   .shell {
     flex: 1;
-    height: calc(100vh - 150px);
+    height: calc(100vh - 120px); /* fill remaining space */
   }
   header {
     font-size: 0.85rem;
@@ -73,6 +73,7 @@ PAGE = """<!doctype html>
     height: 40px;
   }
 }
+
     body {
       margin:0; padding:0;
       font-family: 'Inter', 'Segoe UI', sans-serif;
