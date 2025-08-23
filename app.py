@@ -28,6 +28,51 @@ PAGE = """<!doctype html>
   <title>AlphaBros — GPT-5 (Streaming)</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <style>
+  /* ---------- Responsive Fix ---------- */
+@media (max-width: 900px) {
+  .sidebar {
+    width: 200px;
+  }
+  header {
+    font-size: 0.9rem;
+  }
+  textarea {
+    font-size: 0.9rem;
+    height: 45px;
+  }
+}
+
+@media (max-width: 600px) {
+  body {
+    flex-direction: column;
+  }
+  .sidebar {
+    width: 100%;
+    height: 150px;
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  .sidebar h3 {
+    display: none; /* hide Chats title */
+  }
+  .tab {
+    min-width: 120px;
+    font-size: 0.8rem;
+  }
+  .shell {
+    flex: 1;
+    height: calc(100vh - 150px);
+  }
+  header {
+    font-size: 0.85rem;
+    padding: 0 10px;
+  }
+  textarea {
+    font-size: 0.85rem;
+    height: 40px;
+  }
+}
     body {
       margin:0; padding:0;
       font-family: 'Inter', 'Segoe UI', sans-serif;
