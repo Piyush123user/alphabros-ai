@@ -1,4 +1,5 @@
 import os
+import requests
 from flask import Flask, request, Response, render_template_string, jsonify
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -6,9 +7,13 @@ from dotenv import load_dotenv
 # ---------- Load Environment Variables ----------
 load_dotenv()
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+STABILITY_AI_KEY = os.getenv("STABILITY_AI_KEY")
 
 if not OPENROUTER_API_KEY:
-    raise ValueError("⚠️ Missing OPENROUTER_API_KEY. Please set it in Railway/Render/Render variables.")
+    raise ValueError("⚠️ Missing OPENROUTER_API_KEY. Please set it in .env file.")
+
+if not STABILITY_AI_KEY:
+    raise ValueError("⚠️ Missing STABILITY_AI_KEY. Please set it in .env file.")
 
 # ---------- OpenAI Client ----------
 client = OpenAI(
@@ -18,7 +23,6 @@ client = OpenAI(
 
 # ---------- Flask App ----------
 app = Flask(__name__)
-app.secret_key = os.getenv("FLASK_SECRET", "supersecret")  # replace with env variable in production
 
 # ---------- Frontend UI ----------
 PAGE = """<!doctype html>
@@ -211,9 +215,49 @@ def chat():
 def image():
     payload = request.get_json(silent=True) or {}
     prompt = payload.get("prompt", "")
+    
     try:
-        result = client.images.generate(model="openai/dall-e-3", prompt=prompt, size="512x512")
-        return jsonify({"url": result.data[0].url})
+        # Use Stability AI API directly
+        headers = {
+            "Authorization": f"Bearer {STABILITY_AI_KEY}",
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        }
+        
+        data = {
+            "text_prompts": [{"text": prompt}],
+            "cfg_scale": 7,
+            "height": 1024,
+            "width": 1024,
+            "samples": 1,
+            "steps": 30,
+        }
+        
+        # Use Stable Diffusion XL
+        response = requests.post(
+            "https://api.stability.ai/v1/generation/stable-diffusion-xl-1024-v1-0/text-to-image",
+            headers=headers,
+            json=data
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            
+            # For SDXL response format
+            if "artifacts" in result and len(result["artifacts"]) > 0:
+                image_data = result["artifacts"][0]["base64"]
+                # Convert base64 to data URL for frontend
+                image_url = f"data:image/png;base64,{image_data}"
+                return jsonify({"url": image_url})
+            else:
+                return jsonify({"error": "Unexpected response format from Stability AI"}), 500
+                
+        else:
+            error_msg = f"Stability AI API error: {response.status_code}"
+            if response.text:
+                error_msg += f" - {response.text}"
+            return jsonify({"error": error_msg}), 500
+            
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
