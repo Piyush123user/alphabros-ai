@@ -1,5 +1,4 @@
 flask
-flask-dance
 requests
 openai
 python-dotenv
